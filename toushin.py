@@ -29,7 +29,7 @@ def get_data(ISIN, FUND):
     return df, fund_name
 
 # タイトル
-st.title("投資信託シミュレーション（単一ファンド）")
+st.title("投資信託シミュレーション")
 
 # 入力
 isin = st.text_input("ISINコード", value="JP90C000H1T1")
@@ -38,7 +38,7 @@ fundcode = st.text_input("ファンドコード", value="0331418A")
 if isin and fundcode:
     try:
         df, fund_name = get_data(isin, fundcode)
-        st.subheader(f"あなたの保有している「{fund_name}」ファンドは・・・")
+        st.subheader(f"あなたの保有しているファンドは・・・")
         
         # 期間選択
         min_date = df.index.min().date()
@@ -81,12 +81,12 @@ if isin and fundcode:
         for i in range(num_sim):
             ax.plot(sim_array[i], color='lightgray', linewidth=0.5, alpha=0.5)
 
-        ax.plot(percentiles[0], 'b--', label="25%ライン")
-        ax.plot(percentiles[1], 'r-', label="中央値（50%）")
-        ax.plot(percentiles[2], 'b--', label="75%ライン")
-        ax.set_title(f"{fund_name}のモンテカルロシミュレーション（{years}年間）")
-        ax.set_xlabel("年数")
-        ax.set_ylabel("資産価値")
+        ax.plot(percentiles[0], 'b--', label="25 Percentile")
+        ax.plot(percentiles[1], 'r-', label="50 Percentile(Median)")
+        ax.plot(percentiles[2], 'b--', label="75 Percentile")
+        ax.set_title(f"（{years}years Monte Carlo Simulation）")
+        ax.set_xlabel("Year")
+        ax.set_ylabel("Value")
         ax.legend()
         st.pyplot(fig)
 
