@@ -9,6 +9,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import matplotlib.pyplot as plt
 
 def get_data(ISIN, FUND):
     BASEURL = "https://toushin-lib.fwg.ne.jp/FdsWeb/FDST030000/csv-file-download?"
@@ -17,85 +18,109 @@ def get_data(ISIN, FUND):
     DOWNURL = BASEURL + ISINcd + "&" + FUNDcd
     DATE_PARSE = lambda date: datetime.strptime(date, "%Y年%m月%d日")
     df = pd.read_csv(DOWNURL, engine="python", encoding="shift-jis", index_col="年月日", parse_dates=True, date_parser=DATE_PARSE)
-    return df
+    df_name = pd.read_csv(DOWNURL, engine="python", encoding="shift-jis", nrows=1)
+    name = df_name.columns[0]
+    return df, name
 
-def join_data(df_part, df_join, KEYWORD, str_date, end_date):
-    df_part_fil = df_part.loc[(df_part.index >= str_date) & (df_part.index <= end_date), :]
-    df_part_fil = df_part_fil.rename(columns={"基準価額(円)": KEYWORD})[[KEYWORD]]
-    df_join = pd.merge(df_join, df_part_fil, left_index=True, right_index=True, how="outer") if df_join is not None else df_part_fil
+def join_data(df_part, df_join, KEYWORD):
+    df_part = df_part.rename(columns={"基準価額(円)": KEYWORD})[[KEYWORD]]
+    df_join = pd.merge(df_join, df_part, left_index=True, right_index=True, how="outer") if df_join is not None else df_part
     return df_join
 
-st.title("投資信託のリスク・リターン分析とシミュレーション")
+st.title("投資信託分析＆将来シミュレーションアプリ")
 
-num_funds = st.number_input("保有投資信託の数を入力してください", min_value=1, max_value=10, value=1)
-
+num_funds = st.number_input("保有している投資信託の数", min_value=1, max_value=10, value=1)
 inputs = []
+
 for i in range(num_funds):
-    with st.expander(f"ファンド{i+1}の情報を入力"):
+    with st.expander(f"ファンド{i+1}の情報"):
         isin = st.text_input(f"ISINコード{i+1}", key=f"isin{i}")
         fundcode = st.text_input(f"ファンドコード{i+1}", key=f"fund{i}")
         inputs.append((isin, fundcode))
 
-if st.button("データを取得して分析を開始"):
-    str_date = "2015-04-01"
-    end_date = "2025-03-31"
+if st.button("データ取得・分析開始"):
     df_join = None
-    asset_names = []
-
+    fund_names = []
+    raw_dfs = {}
     for idx, (isin, fundcode) in enumerate(inputs):
         if isin and fundcode:
             try:
-                df = get_data(isin, fundcode)
-                name = f"ファンド{idx+1}"
-                df_join = join_data(df, df_join, name, str_date, end_date)
-                asset_names.append(name)
+                df_raw, name = get_data(isin, fundcode)
+                df_join = join_data(df_raw, df_join, name)
+                raw_dfs[name] = df_raw
+                fund_names.append(name)
+                st.success(f"✅ あなたの保有している「{name}」ファンドのデータを取得しました。")
             except Exception as e:
-                st.error(f"{name} のデータ取得に失敗しました: {e}")
+                st.error(f"❌ データ取得失敗: {e}")
         else:
-            st.warning(f"ファンド{idx+1}の情報が未入力です。")
+            st.warning(f"⚠️ ファンド{idx+1}の情報が未入力です。")
 
     if df_join is not None:
-        st.subheader("基準価額（過去）")
-        st.line_chart(df_join)
+        df_join = df_join.sort_index()
+        min_date = df_join.index.min()
+        max_date = df_join.index.max()
+        str_date = st.slider("分析開始日を選択", min_value=min_date, max_value=max_date, value=min_date)
+        df_filtered = df_join[df_join.index >= str_date]
 
-        st.subheader("リターン（年率）")
+        st.subheader("基準価額の推移")
+        st.line_chart(df_filtered)
+
+        st.subheader("年率リターン")
         returns = []
-        for col in df_join.columns:
-            data = df_join[col].dropna()
+        for col in df_filtered.columns:
+            data = df_filtered[col].dropna()
             length = len(data) - 1
-            if length <= 0:
-                returns.append(np.nan)
-                continue
-            fund_return = 100 * ((data.pct_change()[1:] + 1).prod() ** (250 / length) - 1)
-            returns.append(fund_return)
-        df_returns = pd.DataFrame(returns, index=df_join.columns, columns=["リターン（年率）"])
-        st.dataframe(df_returns.style.format("{:.2f}%"))
+            r = 100 * ((data.pct_change()[1:] + 1).prod() ** (250 / length) - 1)
+            returns.append(r)
+        df_ret = pd.DataFrame(returns, index=df_filtered.columns, columns=["リターン（年率）"])
+        st.dataframe(df_ret.style.format("{:.2f}%"))
 
-        st.subheader("リスク（年率）")
-        df_vola = (df_join.pct_change()[1:] * 100).std() * (250 ** 0.5)
+        st.subheader("年率リスク")
+        df_vola = (df_filtered.pct_change()[1:] * 100).std() * (250 ** 0.5)
         df_vola = pd.DataFrame(df_vola, columns=["リスク（年率）"])
         st.dataframe(df_vola.style.format("{:.2f}%"))
 
-        if len(df_join.columns) > 1:
+        if len(df_filtered.columns) > 1:
             st.subheader("相関行列")
-            st.dataframe(df_join.corr().style.background_gradient(cmap="coolwarm").format("{:.2f}"))
+            st.dataframe(df_filtered.corr().style.background_gradient(cmap="coolwarm").format("{:.2f}"))
 
-        # --- ここで将来シミュレーション ---
-        st.subheader("将来シミュレーション（モンテカルロ）")
+        # --- 将来シミュレーション ---
+        st.subheader("将来シミュレーション（モンテカルロ法）")
         n_years = st.slider("シミュレーション期間（年）", 1, 30, 10)
         n_scenarios = st.slider("シナリオ数", 100, 1000, 300)
 
-        sim_results = {}
-        for col in df_join.columns:
-            mu = df_returns.loc[col].values[0] / 100
+        for col in df_filtered.columns:
+            st.markdown(f"### 📈 {col}")
+            mu = df_ret.loc[col].values[0] / 100
             sigma = df_vola.loc[col].values[0] / 100
-            start_price = df_join[col].dropna()[-1]
+            S0 = df_filtered[col].dropna()[-1]
+
             sim_data = np.zeros((n_scenarios, n_years + 1))
-            sim_data[:, 0] = start_price
+            sim_data[:, 0] = S0
             for t in range(1, n_years + 1):
                 sim_data[:, t] = sim_data[:, t-1] * np.exp(np.random.normal(mu - 0.5 * sigma ** 2, sigma, n_scenarios))
-            sim_results[col] = sim_data
 
-        for col, sim_data in sim_results.items():
-            df_sim = pd.DataFrame(sim_data.T)
-            st.line_chart(df_sim)
+            # 中央/四分位シナリオ
+            median = np.percentile(sim_data, 50, axis=0)
+            p25 = np.percentile(sim_data, 25, axis=0)
+            p75 = np.percentile(sim_data, 75, axis=0)
+
+            # グラフ描画
+            fig, ax = plt.subplots(figsize=(10, 5))
+            for i in range(min(50, n_scenarios)):
+                ax.plot(sim_data[i], color='lightgrey', linewidth=0.8, alpha=0.5)
+            ax.plot(median, color='red', label='50%（中央値）', linewidth=2)
+            ax.plot(p25, color='blue', linestyle='--', label='25%', linewidth=1.5)
+            ax.plot(p75, color='blue', linestyle='--', label='75%', linewidth=1.5)
+            ax.set_title(f"{col} 将来価格シナリオ")
+            ax.set_xlabel("年")
+            ax.set_ylabel("価格")
+            ax.legend()
+            st.pyplot(fig)
+
+            # 年率リターン・リスク（中央値から計算）
+            returns_median = pd.Series(median).pct_change().dropna()
+            median_return = ((returns_median + 1).prod()) ** (1 / len(returns_median)) - 1
+            median_risk = returns_median.std() * (250 ** 0.5)
+            st.markdown(f"📊 中央シナリオの年率リターン: **{median_return * 100:.2f}%**")
+            st.markdown(f"📉 中央シナリオの年率リスク: **{median_risk * 100:.2f}%**")
