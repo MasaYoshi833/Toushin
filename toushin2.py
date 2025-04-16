@@ -31,7 +31,7 @@ isin = st.text_input("ISINコード", value="JP90C000H1T1")
 fundcode = st.text_input("ファンドコード", value="0331418A")
 
 # 実行ボタン
-run_sim = st.button("シミュレーションを実行")
+run_sim = st.button("分析＆シミュレーション")
 
 if run_sim and isin and fundcode:
     try:
@@ -46,7 +46,7 @@ if run_sim and isin and fundcode:
         df_months = df.resample("MS").first()
         month_options = df_months.index.to_list()
         month_strs = [d.strftime("%Y-%m") for d in month_options]
-        selected_month_str = st.selectbox("分析開始月を選択", month_strs)
+        selected_month_str = st.selectbox("抽出開始月を選択", month_strs)
         str_date = pd.to_datetime(selected_month_str + "-01")
 
         # フィルタリング
@@ -88,6 +88,10 @@ if run_sim and isin and fundcode:
 
         # グラフ描画（対象パスのみ表示）
         fig, ax = plt.subplots()
+        
+        for i in range(num_sim):
+            ax.plot(sim_array[i], color='lightgray', alpha=0.3, linewidth=0.5)
+        
         ax.plot(sim_array[idx_25], 'b--', label="25%")
         ax.plot(sim_array[idx_50], 'r-', label="50%(Median)")
         ax.plot(sim_array[idx_75], 'b--', label="75%")
@@ -96,7 +100,7 @@ if run_sim and isin and fundcode:
         ymax = sim_array[idx_50, -1] * 1.85
         ax.set_ylim([0, ymax])
 
-        ax.set_title("Monte Carlo Simulation（20years）")
+        ax.set_title("Monte Carlo Simulation 20years")
         ax.set_xlabel("Years")
         ax.set_ylabel("Value")
         ax.legend()
@@ -110,7 +114,7 @@ if run_sim and isin and fundcode:
 
         st.success(
             f"中央値シナリオの年率リターン：{ann_sim_return * 100:.2f} %\n"
-            f"中央値シナリオの年率リスク：{ann_sim_risk * 100:.2f} %"
+            f",年率リスク：{ann_sim_risk * 100:.2f} %"
         )
 
     except Exception as e:
